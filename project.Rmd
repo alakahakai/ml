@@ -1,0 +1,123 @@
+---
+title: Practical Machine Learning
+subtitle: Course Project
+author: Ray Qiu
+date: November 21st, 2015
+output: 
+  html_document: 
+    keep_md: yes
+    theme: journal
+---
+
+#### Project Overview
+
+The goal of the project is to predict the manner in which people did the exercise. This is the "classe" variable in the training set. We can use any of the other variables to predict with. We will create a report describing how we built our model, how we used cross validation, what we think the expected out of sample error is, and why we made the choices. We will also use the prediction model to predict 20 different test cases. 
+
+#### Load libraries
+```{r message=FALSE}
+library(dplyr)
+library(ggplot2)
+library(caret)
+library(rattle)
+library(randomForest)
+```
+#### Data Processing
+
+##### Read data in
+```{r}
+training <- read.csv("pml-training.csv", na.strings = c("NA","#DIV/0!",""))
+testing <- read.csv("pml-testing.csv", na.strings = c("NA","#DIV/0!",""))
+```
+
+##### Quickly explore the data sets (Not evaluated in the report to save space)
+```{r, eval = FALSE} 
+summary(training)
+str(training)
+head(training)
+summary(testing)
+str(testing)
+head(testing)
+```
+
+##### Clean data
+
+###### Remove columns that are simply an index, timestamp or username.
+```{r}
+training <- training[-c(1:6)]
+testing <- testing[-c(1:6)]
+```
+
+###### Remove Near Zero-Variance Predictors
+```{r}
+nzv <- nearZeroVar(training)
+training <- training[, -nzv]
+nzv <- nearZeroVar(testing)
+testing <- testing[,-nzv]
+```
+
+###### Find the columns that have more than 80% NA value.
+```{r}
+# Define a function to check the value
+checkValue <- function(x) {
+  if (is.na(x)) 1 else 0
+}
+# Return a vector for the total number of NA like values for each column
+ret <- apply(training, 2, function(x) sum(sapply(x, checkValue)))
+# Get the names of the columns that have more than 80% NA like values
+n <- names(ret[ret > dim(training)[1] * 0.80])
+```
+
+######  Remove those columns from the training and testing data sets
+```{r}
+training <- select(training, -one_of(n))
+testing <- select(testing, -one_of(n))
+```
+
+##### Proceed with further processing.  Set a fixed seed.
+```{r}
+set.seed(33833)
+```
+
+##### Partition training data set further into train1 and test1
+```{r}
+trainIndex <- createDataPartition(training$classe, p = 0.6, list = FALSE)
+train1 <- training[trainIndex,]
+test1 <- training[-trainIndex,]
+dim(train1)
+dim(test1)
+```
+
+##### Train using random forest
+```{r}
+fit <- train(classe ~ ., data = train1, method = "rf", 
+             preProcess = c("center", "scale"),
+             trControl = trainControl(method="cv", number = 5),
+             prox = TRUE, allowParallel = TRUE)
+fit
+plot(fit$finalModel, main = "Random Forest Final Model")
+```
+
+##### Predict using the test1 data set and check accuracy
+```{r}
+trainPredictions <- predict(fit, newdata = test1)
+confusionMatrix(trainPredictions, test1$classe)
+table(trainPredictions, test1$classe)
+```
+
+##### Predict the 20 test cases that are provided 
+```{r}
+predictions <- predict(fit, newdata = testing)
+predictions
+```
+
+#### Write answers to file
+```{r}
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+pml_write_files(predictions)
+```
